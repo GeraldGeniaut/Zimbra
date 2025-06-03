@@ -1,0 +1,75 @@
+# Ubuntu
+sudo apt update
+sudo apt install install snapd
+sudo snap install --classic certbot
+
+certbot --version
+
+sudo su - zimbra -c "zmproxyctl stop"
+sudo su - zimbra -c "zmmailboxdctl stop"
+
+sudo su - zimbra -c 'source ~/bin/zmshutil; zmsetvars'
+sudo su - zimbra -c 'zmhostname'
+sudo su - zimbra -c 'hostname --fqdn'
+
+export EMAIL="admin@computingforgeeks.com"
+export ZIMBRA_FQDN=$(hostname -f)
+#export ZIMBRA_FQDN="mail.computingforgeeks.com"
+
+sudo certbot certonly --standalone \
+  -d $ZIMBRA_FQDN \
+  --preferred-chain "ISRG Root X1" \
+  --force-renewal \
+  --preferred-challenges http \
+  --agree-tos \
+  -n \
+  -m $EMAIL \
+  --keep-until-expiring \
+  --key-type rsa
+  
+ ls -lh /etc/letsencrypt/live/$ZIMBRA_FQDN
+ total 4.0K
+lrwxrwxrwx. 1 root root  44 Sep  4 11:31 cert.pem -> ../../archive/mail.computingforgeeks.com/cert1.pem
+lrwxrwxrwx. 1 root root  45 Sep  4 11:31 chain.pem -> ../../archive/mail.computingforgeeks.com/chain1.pem
+lrwxrwxrwx. 1 root root  49 Sep  4 11:31 fullchain.pem -> ../../archive/mail.computingforgeeks.com/fullchain1.pem
+lrwxrwxrwx. 1 root root  47 Sep  4 11:31 privkey.pem -> ../../archive/mail.computingforgeeks.com/privkey1.pem
+-rw-r--r--. 1 root root 692 Sep  4 11:31 README
+
+
+ sudo mkdir /opt/zimbra/ssl/letsencrypt
+ CERTPATH=/etc/letsencrypt/live/$ZIMBRA_FQDN
+sudo cp  $CERTPATH/* /opt/zimbra/ssl/letsencrypt/
+
+ls /opt/zimbra/ssl/letsencrypt/
+cert.pem  chain.pem  fullchain.pem  privkey.pem  README
+
+cat $CERTPATH/chain.pem | sudo tee /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem
+
+wget -O /tmp/ISRG-X1.pem https://letsencrypt.org/certs/isrgrootx1.pem.txt
+cat /tmp/ISRG-X1.pem | sudo tee -a  /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem
+
+cat /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem
+
+sudo chown -R zimbra:zimbra /opt/zimbra/ssl/letsencrypt/
+
+ls -lha /opt/zimbra/ssl/letsencrypt/
+total 24K
+drwxr-xr-x. 2 zimbra zimbra  117 May 23 12:47 .
+drwxr-xr-x. 8 zimbra zimbra  167 May 23 12:47 ..
+-rw-r--r--. 1 zimbra zimbra 1.8K May 23 12:47 cert.pem
+-rw-r--r--. 1 zimbra zimbra 1.8K May 23 12:47 chain.pem
+-rw-r--r--. 1 zimbra zimbra 3.6K May 23 12:47 fullchain.pem
+-rw-------. 1 zimbra zimbra 1.7K May 23 12:47 privkey.pem
+-rw-r--r--. 1 zimbra zimbra  692 May 23 12:47 README
+-rw-r--r--. 1 zimbra zimbra 3.7K May 23 12:47 zimbra_chain.pem
+
+sudo su - zimbra -c '/opt/zimbra/bin/zmcertmgr verifycrt comm /opt/zimbra/ssl/letsencrypt/privkey.pem /opt/zimbra/ssl/letsencrypt/cert.pem /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem'
+
+sudo cp -a /opt/zimbra/ssl/zimbra /opt/zimbra/ssl/zimbra.$(date "+%Y.%m.%d-%H.%M")
+
+sudo su - zimbra -c '/opt/zimbra/bin/zmcertmgr deploycrt comm /opt/zimbra/ssl/letsencrypt/cert.pem /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem'
+
+sudo su - zimbra -c "zmcontrol restart"
+
+
+

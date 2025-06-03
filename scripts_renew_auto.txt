@@ -1,0 +1,64 @@
+sudo vim /usr/local/sbin/zimbra_letsencrypt_renew
+
+#!/bin/bash
+export ZIMBRA_FQDN=$(hostname -f)
+#export ZIMBRA_FQDN="mail.example.com"
+#export EMAIL="admin@example.com"
+
+# certbot certonly --standalone \
+#  -d $ZIMBRA_FQDN \
+#  --preferred-chain "ISRG Root X1" \
+#  --force-renewal \
+#  --preferred-challenges http \
+#  --agree-tos \
+#  --register-unsafely-without-email \
+#  -n \
+#  -m $EMAIL \
+#  --keep-until-expiring \
+#  --key-type rsa
+
+# Let's Encrypt Certificates Path
+CERTPATH=/etc/letsencrypt/live/$ZIMBRA_FQDN
+
+# Copy certs and key files to zimbra directory
+cp -f $CERTPATH/* /opt/zimbra/ssl/letsencrypt/
+
+# Combine the chain.pem with the root CA - Order is chain before the root CA
+cat $CERTPATH/chain.pem | tee /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem
+wget -O /tmp/ISRG-X1.pem https://letsencrypt.org/certs/isrgrootx1.pem.txt
+cat /tmp/ISRG-X1.pem | tee -a  /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem
+
+# Set permissions to zimbra user
+chown -R zimbra:zimbra /opt/zimbra/ssl/letsencrypt/
+
+# Stop Zimbra services
+su - zimbra -c 'zmcontrol stop'
+
+# Verify certificates
+su - zimbra -c '/opt/zimbra/bin/zmcertmgr verifycrt comm /opt/zimbra/ssl/letsencrypt/privkey.pem /opt/zimbra/ssl/letsencrypt/cert.pem /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem'
+
+# Backup current used zimbra certificates
+cp -a /opt/zimbra/ssl/zimbra /opt/zimbra/ssl/zimbra.$(date "+%Y.%m.%d-%H.%M")
+
+# Copy let's encrypt key to Zimbra commercial key file
+cp /opt/zimbra/ssl/letsencrypt/privkey.pem /opt/zimbra/ssl/zimbra/commercial/commercial.key
+chown zimbra:zimbra /opt/zimbra/ssl/zimbra/commercial/commercial.key
+
+# Deploy Let's Encrypt SSL certificates
+su - zimbra -c '/opt/zimbra/bin/zmcertmgr deploycrt comm /opt/zimbra/ssl/letsencrypt/cert.pem /opt/zimbra/ssl/letsencrypt/zimbra_chain.pem'
+
+# Restart Zimbra services
+su - zimbra -c "zmcontrol restart"
+
+sudo chmod +x  /usr/local/sbin/zimbra_letsencrypt_renew
+
+sudo vim  /usr/local/sbin/zimbra_stop_proxy_service
+
+#!/bin/bash
+# Stop Zimbra Proxy services
+su - zimbra -c 'zmproxyctl stop'
+
+sudo chmod +x  /usr/local/sbin/zimbra_stop_proxy_service
+
+sudo crontab -e
+15 3 * * * certbot renew --pre-hook "/usr/local/sbin/zimbra_stop_proxy_service" --post-hook "/usr/local/sbin/zimbra_letsencrypt_renew"
